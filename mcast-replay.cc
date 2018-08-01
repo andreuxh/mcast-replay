@@ -89,18 +89,8 @@ void handler(u_char *stop,
     auto sec = pkt_header->ts.tv_sec;
     auto saddr = ntohl(iph->saddr);
     auto daddr = ntohl(iph->daddr);
-    /*
-     * This is wrong (sequence points...):
-    printf("%3$02u:%2$02u:%1$02u.%4$06u IP "
-           "%8$hhu.%7$hhu.%6$hhu.%5$hhu.%9$hu > "
-           "%13$hhu.%12$hhu.%11$hhu.%10$hhu.%14$hu\n",
-           sec % 60, (sec /= 60) % 60, sec % 24, pkt_header->ts.tv_usec,
-           saddr, saddr >>= 8, saddr >>= 8, saddr >> 8, ntohs(udph->source),
-           daddr, daddr >>= 8, daddr >>= 8, daddr >> 8, ntohs(udph->dest));
-    */
     printf("%02ld:%02ld:%02ld.%06ld IP "
-           "%hhu.%hhu.%hhu.%hhu.%u > "
-           "%hhu.%hhu.%hhu.%hhu.%u\n",
+           "%hhu.%hhu.%hhu.%hhu.%u > %hhu.%hhu.%hhu.%hhu.%u\n",
            sec / 3600 % 24, sec / 60 % 60, sec % 60, pkt_header->ts.tv_usec,
            saddr >> 24, saddr >> 16, saddr >> 8, saddr, ntohs(udph->source),
            daddr >> 24, daddr >> 16, daddr >> 8, daddr, ntohs(udph->dest));
@@ -145,17 +135,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    struct pcap_pkthdr *pkt_header;
-    const u_char *pkt_data;
-    int r;
-    while ((r = pcap_next_ex(pcap, &pkt_header, &pkt_data)) >= 0)
+    if (pcap_loop(pcap, -1, handler, 0) < 0)
     {
-        handler(0, pkt_header, pkt_data);
-    }
-
-    if (r == -1)
-    {
-        PCAP_DIE(pcap, "pcap_next_ex");
+        PCAP_DIE(pcap, "pcap_loop");
     }
 
     return 0;
