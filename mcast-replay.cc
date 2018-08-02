@@ -105,7 +105,7 @@ ret:
 }
 
 #define PCAP_DIE(pcap, prefix) do { \
-    pcap_perror(pcap, const_cast<char*>(prefix ": ")); \
+    pcap_perror(pcap, const_cast<char*>(prefix)); \
     return -1; \
 } while (0)
 
