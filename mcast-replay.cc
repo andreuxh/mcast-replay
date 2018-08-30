@@ -13,10 +13,80 @@ struct vlan_tag
 };
 
 
-static pcap_t *pcap;
+class udp_replayer
+{
+public:
+    udp_replayer()
+    {}
+    udp_replayer(const char *filename)
+      : filename_{filename} 
+    {
+        open();
+    }
 
-void handler(u_char *stop,
-             const struct pcap_pkthdr * pkt_header, const u_char *pkt_data)
+    ~udp_replayer()
+    {
+        close();
+    }
+
+    bool open(const char *filename)
+    {
+        close();
+        filename_ = filename;
+        return open();
+    }
+
+    void close()
+    {
+        if (pcap_)
+        {
+            pcap_close(pcap_);
+            pcap_ = nullptr;
+            filename_ = nullptr;
+        }
+    }
+
+    int loop(int count = -1)
+    {
+        return pcap_loop(pcap_, count, &call_handler,
+                         reinterpret_cast<u_char*>(this));
+    }
+    void handle(const struct pcap_pkthdr *pkt_header,
+                const u_char *pkt_data);
+
+    pcap_t *pcap() { return pcap_; }
+
+    bool fail() const { return filename_ && !pcap_; }
+    const char *error() const
+    {
+        if (!filename_) return nullptr;
+        else if (!pcap_) return errbuf_;
+        else return pcap_geterr(pcap_);
+    }
+
+private:
+    bool open()
+    {
+        pcap_ = pcap_open_offline(filename_, errbuf_);
+        return pcap_;
+    }
+
+    static void call_handler(u_char *self,
+                             const struct pcap_pkthdr *pkt_header,
+                             const u_char *pkt_data)
+    {
+        reinterpret_cast<udp_replayer*>(self)->handle(pkt_header, pkt_data);
+    }
+
+    pcap_t *pcap_ = nullptr;
+    const char *filename_ = nullptr;
+    bool stop_on_error_ = false;
+    char errbuf_[PCAP_ERRBUF_SIZE];
+};
+
+
+void udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
+                          const u_char *pkt_data)
 {
     static size_t pkt_count;
     pkt_count++;
@@ -98,14 +168,14 @@ void handler(u_char *stop,
     return;
 
 ret:
-    if (stop)
+    if (stop_on_error_)
     {
-        pcap_breakloop(pcap);
+        pcap_breakloop(pcap_);
     }
 }
 
-#define PCAP_DIE(pcap, prefix) do { \
-    pcap_perror(pcap, const_cast<char*>(prefix)); \
+#define REPLAYER_DIE(rpl, prefix) do { \
+    fprintf(stderr, "%s: %s\n", prefix, rpl.error()); \
     return -1; \
 } while (0)
 
@@ -113,31 +183,27 @@ int main(int argc, char *argv[])
 {
     if (argc < 2) return -1;
 
-    char errbuf[PCAP_ERRBUF_SIZE];
-    pcap = pcap_open_offline(argv[1], errbuf);
-    if (!pcap)
+    udp_replayer rpl(argv[1]);
+    if (rpl.fail())
     {
-        fprintf(stderr, "Could not open %s: %s\n", argv[1], errbuf);
+        fprintf(stderr, "Could not open %s: %s\n", argv[1], rpl.error());
         return 1;
     }
 
     if (argc > 2)
     {
+        auto *pcap = rpl.pcap();
         struct bpf_program bpf;
-        if (pcap_compile(pcap, &bpf, argv[2], 1, PCAP_NETMASK_UNKNOWN) < 0)
+        if (pcap_compile(pcap, &bpf, argv[2], 1, PCAP_NETMASK_UNKNOWN) < 0
+            || pcap_setfilter(pcap, &bpf) < 0)
         {
-            PCAP_DIE(pcap, "pcap_compile");
-        }
-
-        if (pcap_setfilter(pcap, &bpf) < 0)
-        {
-            PCAP_DIE(pcap, "pcap_setfilter");
+            REPLAYER_DIE(rpl, "pcap_compile/setfilter");
         }
     }
 
-    if (pcap_loop(pcap, -1, handler, 0) < 0)
+    if (rpl.loop() < 0)
     {
-        PCAP_DIE(pcap, "pcap_loop");
+        REPLAYER_DIE(rpl, "pcap_loop");
     }
 
     return 0;
