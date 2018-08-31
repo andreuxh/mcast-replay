@@ -80,6 +80,7 @@ private:
 
     pcap_t *pcap_ = nullptr;
     const char *filename_ = nullptr;
+    size_t pkt_count = 0;
     bool stop_on_error_ = false;
     char errbuf_[PCAP_ERRBUF_SIZE];
 };
@@ -88,7 +89,6 @@ private:
 void udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
                           const u_char *pkt_data)
 {
-    static size_t pkt_count;
     pkt_count++;
 
     {
