@@ -51,7 +51,7 @@ public:
         return pcap_loop(pcap_, count, &call_handler,
                          reinterpret_cast<u_char*>(this));
     }
-    void handle(const struct pcap_pkthdr *pkt_header,
+    bool handle(const struct pcap_pkthdr *pkt_header,
                 const u_char *pkt_data);
 
     pcap_t *pcap() { return pcap_; }
@@ -71,11 +71,21 @@ private:
         return pcap_;
     }
 
-    static void call_handler(u_char *self,
+    static void call_handler(u_char *rpl,
                              const struct pcap_pkthdr *pkt_header,
                              const u_char *pkt_data)
     {
-        reinterpret_cast<udp_replayer*>(self)->handle(pkt_header, pkt_data);
+        auto& self = *reinterpret_cast<udp_replayer*>(rpl);
+        if (!self.handle(pkt_header, pkt_data) &&
+            self.stop_on_error_)
+        {
+            pcap_breakloop(self.pcap_);
+        }
+    }
+
+    static void error(const char *msg, size_t got, size_t expected)
+    {
+        fprintf(stderr, "%s [%zu<%zu]\n", msg, got, expected);
     }
 
     pcap_t *pcap_ = nullptr;
@@ -86,17 +96,15 @@ private:
 };
 
 
-void udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
+bool udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
                           const u_char *pkt_data)
 {
     pkt_count++;
 
-    {
     if (pkt_header->caplen < pkt_header->len)
     {
-        fprintf(stderr, "Short capture length [%u<%u]\n",
-                        pkt_header->caplen, pkt_header->len);
-        goto ret;
+        error("Short capture length", pkt_header->caplen, pkt_header->len);
+        return false;
     }
 
     auto *p = pkt_data;
@@ -104,9 +112,8 @@ void udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
     auto *eth = reinterpret_cast<const ether_header*>(p);
     if ((p += sizeof(ether_header)) > endp)
     {
-        fprintf(stderr, "Truncated Ethernet header [%u<%zu]\n",
-                        pkt_header->len, p - pkt_data);
-        goto ret;
+        error("Truncated Ethernet header", pkt_header->len, p - pkt_data);
+        return false;
     }
 
     auto ether_type = eth->ether_type;
@@ -115,45 +122,41 @@ void udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
         auto *tag = reinterpret_cast<const vlan_tag*>(p);
         if ((p += sizeof(vlan_tag)) > endp)
         {
-            fprintf(stderr, "Truncated VLAN tag [%u<%zu]\n",
-                            pkt_header->len, p - pkt_data);
-            goto ret;
+            error("Truncated VLAN tag", pkt_header->len, p - pkt_data);
+            return false;
         }
         ether_type = tag->ether_type;
     }
-    if (ether_type != htons(ETHERTYPE_IP)) return;
+    if (ether_type != htons(ETHERTYPE_IP)) return true;
 
     auto *iph = reinterpret_cast<const iphdr*>(p);
     auto iph_len = iph->ihl * 4u;
     if (iph_len < sizeof(iphdr))
     {
         fprintf(stderr, "Malformed IP header [ihl=%u]\n", iph->ihl);
-        goto ret;
+        return false;
     }
     if ((p += iph_len) > endp)
     {
-        fprintf(stderr, "Truncated IP header [%u<%zu]\n",
-                        pkt_header->len, p - pkt_data);
-        goto ret;
+        error("Truncated IP header", pkt_header->len, p - pkt_data);
+        return false;
     }
 
-    if (iph->protocol != IPPROTO_UDP) return;
-    if (!IN_MULTICAST(ntohl(iph->daddr))) return;
+    if (iph->protocol != IPPROTO_UDP) return true;
+    if (!IN_MULTICAST(ntohl(iph->daddr))) return true;
 
     auto *udph = reinterpret_cast<const udphdr*>(p);
     if ((p += sizeof(udphdr)) > endp)
     {
-        fprintf(stderr, "Truncated UDP header [%u<%zu]\n",
-                        pkt_header->len, p - pkt_data);
-        goto ret;
+        error("Truncated UDP header", pkt_header->len, p - pkt_data);
+        return false;
     }
 
     auto len = ntohs(udph->len) - sizeof(udphdr);
     if (p + len > endp)
     {
-        fprintf(stderr, "Truncated UDP payload [%u<%zu]\n",
-                        pkt_header->len, p + len - pkt_data);
-        goto ret;
+        error("Truncated UDP payload", pkt_header->len, p + len - pkt_data);
+        return false;
     }
 
     auto sec = pkt_header->ts.tv_sec;
@@ -164,14 +167,8 @@ void udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
            sec / 3600 % 24, sec / 60 % 60, sec % 60, pkt_header->ts.tv_usec,
            saddr >> 24, saddr >> 16, saddr >> 8, saddr, ntohs(udph->source),
            daddr >> 24, daddr >> 16, daddr >> 8, daddr, ntohs(udph->dest));
-    }
-    return;
 
-ret:
-    if (stop_on_error_)
-    {
-        pcap_breakloop(pcap_);
-    }
+    return true;
 }
 
 #define REPLAYER_DIE(rpl, prefix) do { \
