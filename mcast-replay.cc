@@ -51,8 +51,7 @@ public:
         return pcap_loop(pcap_, count, &call_handler,
                          reinterpret_cast<u_char*>(this));
     }
-    bool handle(const struct pcap_pkthdr *pkt_header,
-                const u_char *pkt_data);
+    bool handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data);
 
     pcap_t *pcap() { return pcap_; }
 
@@ -71,9 +70,8 @@ private:
         return pcap_;
     }
 
-    static void call_handler(u_char *rpl,
-                             const struct pcap_pkthdr *pkt_header,
-                             const u_char *pkt_data)
+    static void call_handler(u_char *rpl, const pcap_pkthdr *pkt_header,
+                                          const u_char *pkt_data)
     {
         auto& self = *reinterpret_cast<udp_replayer*>(rpl);
         if (!self.handle(pkt_header, pkt_data) &&
@@ -82,6 +80,13 @@ private:
             pcap_breakloop(self.pcap_);
         }
     }
+
+    bool replay_datagram(const pcap_pkthdr *pkt_header,
+                         const iphdr *iph,
+                         const udphdr *udph);
+    bool print_datagram(const pcap_pkthdr *pkt_header,
+                        const iphdr *iph,
+                        const udphdr *udph);
 
     static void error(const char *msg, size_t got, size_t expected)
     {
@@ -92,11 +97,12 @@ private:
     const char *filename_ = nullptr;
     size_t pkt_count = 0;
     bool stop_on_error_ = false;
+    bool dry_run_ = true;
     char errbuf_[PCAP_ERRBUF_SIZE];
 };
 
 
-bool udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
+bool udp_replayer::handle(const pcap_pkthdr *pkt_header,
                           const u_char *pkt_data)
 {
     pkt_count++;
@@ -159,6 +165,28 @@ bool udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
         return false;
     }
 
+    if (!dry_run_)
+    {
+        return replay_datagram(pkt_header, iph, udph);
+    }
+    else
+    {
+        return print_datagram(pkt_header, iph, udph);
+    }
+}
+
+bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
+                                   const iphdr *iph,
+                                   const udphdr *udph)
+{
+    (void)pkt_header; (void)iph; (void)udph;
+    return false;
+}
+
+bool udp_replayer::print_datagram(const pcap_pkthdr *pkt_header,
+                                  const iphdr *iph,
+                                  const udphdr *udph)
+{
     auto sec = pkt_header->ts.tv_sec;
     auto saddr = ntohl(iph->saddr);
     auto daddr = ntohl(iph->daddr);
@@ -170,6 +198,7 @@ bool udp_replayer::handle(const struct pcap_pkthdr *pkt_header,
 
     return true;
 }
+
 
 #define REPLAYER_DIE(rpl, prefix) do { \
     fprintf(stderr, "%s: %s\n", prefix, rpl.error()); \
