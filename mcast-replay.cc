@@ -16,12 +16,14 @@ struct vlan_tag
 class udp_replayer
 {
 public:
-    udp_replayer()
-    {}
-    udp_replayer(const char *filename)
+    udp_replayer(const char *filename = nullptr)
       : filename_{filename} 
     {
-        open();
+        dest_.sin_family = AF_INET;
+        if (filename_)
+        {
+            open();
+        }
     }
 
     ~udp_replayer()
@@ -96,6 +98,8 @@ private:
     pcap_t *pcap_ = nullptr;
     const char *filename_ = nullptr;
     size_t pkt_count = 0;
+    int socket_;
+    sockaddr_in dest_;
     bool stop_on_error_ = false;
     bool dry_run_ = true;
     char errbuf_[PCAP_ERRBUF_SIZE];
@@ -179,8 +183,13 @@ bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
                                    const iphdr *iph,
                                    const udphdr *udph)
 {
-    (void)pkt_header; (void)iph; (void)udph;
-    return false;
+    (void)pkt_header;
+    dest_.sin_addr.s_addr = iph->daddr;
+    dest_.sin_port = udph->dest;
+    auto buf = reinterpret_cast<const char*>(udph) + sizeof(udphdr);
+    auto len = udph->len - sizeof(udphdr);
+    return -1 != sendto(socket_, buf, len, 0,
+                        reinterpret_cast<sockaddr*>(&dest_), sizeof(dest_));
 }
 
 bool udp_replayer::print_datagram(const pcap_pkthdr *pkt_header,
