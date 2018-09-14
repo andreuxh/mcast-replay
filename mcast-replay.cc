@@ -76,19 +76,16 @@ private:
                                           const u_char *pkt_data)
     {
         auto& self = *reinterpret_cast<udp_replayer*>(rpl);
-        if (!self.handle(pkt_header, pkt_data) &&
-            self.stop_on_error_)
+        if (!self.handle(pkt_header, pkt_data) && self.stop_on_error_)
         {
             pcap_breakloop(self.pcap_);
         }
     }
 
     bool replay_datagram(const pcap_pkthdr *pkt_header,
-                         const iphdr *iph,
-                         const udphdr *udph);
+                         const iphdr *iph, const udphdr *udph);
     bool print_datagram(const pcap_pkthdr *pkt_header,
-                        const iphdr *iph,
-                        const udphdr *udph);
+                        const iphdr *iph, const udphdr *udph);
 
     static void error(const char *msg, size_t got, size_t expected)
     {
@@ -106,8 +103,7 @@ private:
 };
 
 
-bool udp_replayer::handle(const pcap_pkthdr *pkt_header,
-                          const u_char *pkt_data)
+bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
 {
     pkt_count++;
 
@@ -180,8 +176,7 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header,
 }
 
 bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
-                                   const iphdr *iph,
-                                   const udphdr *udph)
+                                   const iphdr *iph, const udphdr *udph)
 {
     (void)pkt_header;
     dest_.sin_addr.s_addr = iph->daddr;
@@ -193,8 +188,7 @@ bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
 }
 
 bool udp_replayer::print_datagram(const pcap_pkthdr *pkt_header,
-                                  const iphdr *iph,
-                                  const udphdr *udph)
+                                  const iphdr *iph, const udphdr *udph)
 {
     auto sec = pkt_header->ts.tv_sec;
     auto saddr = ntohl(iph->saddr);
@@ -229,8 +223,8 @@ int main(int argc, char *argv[])
     {
         auto *pcap = rpl.pcap();
         struct bpf_program bpf;
-        if (pcap_compile(pcap, &bpf, argv[2], 1, PCAP_NETMASK_UNKNOWN) < 0
-            || pcap_setfilter(pcap, &bpf) < 0)
+        if (pcap_compile(pcap, &bpf, argv[2], 1, PCAP_NETMASK_UNKNOWN) < 0 ||
+            pcap_setfilter(pcap, &bpf) < 0)
         {
             REPLAYER_DIE(rpl, "pcap_compile/setfilter");
         }
