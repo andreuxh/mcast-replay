@@ -1,9 +1,18 @@
 #include <pcap/pcap.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+
 #include <arpa/inet.h>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+
+#include <errno.h>
+#include <string.h>
+
+#include <string>
+#include <stdexcept>
 
 
 struct vlan_tag
@@ -19,6 +28,14 @@ public:
     udp_replayer(const char *filename = nullptr)
       : filename_{filename} 
     {
+        socket_ = socket(AF_INET, SOCK_DGRAM, 0);
+        if (socket_ == -1)
+        {
+            std::string errstr = "Can't create socket: ";
+            errstr += strerror(errno); // NB: not MT-safe!
+            throw std::runtime_error(errstr);
+        }
+
         dest_.sin_family = AF_INET;
         if (filename_)
         {
