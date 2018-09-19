@@ -10,6 +10,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <string>
 #include <stdexcept>
@@ -82,6 +83,9 @@ public:
         else return pcap_geterr(pcap_);
     }
 
+    void dry_run(bool value)            { dry_run_ = value; }
+    void stop_on_error(bool value)      { stop_on_error_ = value; }
+
 private:
     bool open()
     {
@@ -114,8 +118,8 @@ private:
     size_t pkt_count = 0;
     int socket_;
     sockaddr_in dest_;
+    bool dry_run_ = false;
     bool stop_on_error_ = false;
-    bool dry_run_ = true;
     char errbuf_[PCAP_ERRBUF_SIZE];
 };
 
@@ -227,20 +231,38 @@ bool udp_replayer::print_datagram(const pcap_pkthdr *pkt_header,
 
 int main(int argc, char *argv[])
 {
-    if (argc < 2) return -1;
+    udp_replayer rpl;
 
-    udp_replayer rpl(argv[1]);
-    if (rpl.fail())
+    int opt;
+    const char *filter = nullptr;
+    while ((opt = getopt(argc, argv, "f:nS")) != -1)
+    {
+        switch (opt)
+        {
+        case 'f':
+            filter = optarg;
+            break;
+        case 'n':
+            rpl.dry_run(true);
+            break;
+        case 'S':
+            rpl.stop_on_error(true);
+            break;
+        }
+    }
+
+    const char *filename = (optind < argc) ? argv[optind] : "-";
+    if (!rpl.open(filename))
     {
         fprintf(stderr, "Could not open %s: %s\n", argv[1], rpl.error());
         return 1;
     }
 
-    if (argc > 2)
+    if (filter)
     {
         auto *pcap = rpl.pcap();
         struct bpf_program bpf;
-        if (pcap_compile(pcap, &bpf, argv[2], 1, PCAP_NETMASK_UNKNOWN) < 0 ||
+        if (pcap_compile(pcap, &bpf, filter, 1, PCAP_NETMASK_UNKNOWN) < 0 ||
             pcap_setfilter(pcap, &bpf) < 0)
         {
             REPLAYER_DIE(rpl, "pcap_compile/setfilter");
