@@ -10,6 +10,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <string>
@@ -27,9 +28,8 @@ class udp_replayer
 {
 public:
     udp_replayer(const char *filename = nullptr)
-      : filename_{filename} 
+      : filename_{filename}, socket_{socket(AF_INET, SOCK_DGRAM, 0)}
     {
-        socket_ = socket(AF_INET, SOCK_DGRAM, 0);
         if (socket_ == -1)
         {
             std::string errstr = "Can't create socket: ";
@@ -108,6 +108,8 @@ private:
     bool print_datagram(const pcap_pkthdr *pkt_header,
                         const iphdr *iph, const udphdr *udph);
 
+    static void clock_normalize(timespec *ts);
+
     static void error(const char *msg, size_t got, size_t expected)
     {
         fprintf(stderr, "%s [%zu<%zu]\n", msg, got, expected);
@@ -115,6 +117,8 @@ private:
 
     pcap_t *pcap_ = nullptr;
     const char *filename_ = nullptr;
+    timeval pcap_timestamp_ = {-1, -1};
+    timespec replay_timestamp_ = {-1, -1};
     size_t pkt_count = 0;
     int socket_;
     sockaddr_in dest_;
@@ -196,10 +200,39 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
     }
 }
 
+inline void udp_replayer::clock_normalize(timespec *ts)
+{
+    static const auto ns_per_sec = 1000000000;
+    ts->tv_sec  += ts->tv_nsec / ns_per_sec;
+    ts->tv_nsec %= ns_per_sec;
+    if (ts->tv_nsec < 0)
+    {
+        --ts->tv_sec;
+        ts->tv_nsec += ns_per_sec;
+    }
+}
+
 bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
                                    const iphdr *iph, const udphdr *udph)
 {
-    (void)pkt_header;
+    if (replay_timestamp_.tv_nsec < 0)
+    {
+        clock_gettime(CLOCK_MONOTONIC, &replay_timestamp_);
+    }
+    else
+    {
+        replay_timestamp_.tv_sec  += pkt_header->ts.tv_sec
+                                   - pcap_timestamp_.tv_sec;
+        replay_timestamp_.tv_nsec += (pkt_header->ts.tv_usec
+                                    - pcap_timestamp_.tv_usec) * 1000;
+        clock_normalize(&replay_timestamp_);
+
+        while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
+                               &replay_timestamp_, nullptr) == -1
+               && errno == EINTR) {}
+    }
+    memcpy(&pcap_timestamp_, &pkt_header->ts, sizeof(pcap_timestamp_));
+
     dest_.sin_addr.s_addr = iph->daddr;
     dest_.sin_port = udph->dest;
     auto buf = reinterpret_cast<const char*>(udph) + sizeof(udphdr);
@@ -261,7 +294,7 @@ int main(int argc, char *argv[])
     if (filter)
     {
         auto *pcap = rpl.pcap();
-        struct bpf_program bpf;
+        bpf_program bpf;
         if (pcap_compile(pcap, &bpf, filter, 1, PCAP_NETMASK_UNKNOWN) < 0 ||
             pcap_setfilter(pcap, &bpf) < 0)
         {
