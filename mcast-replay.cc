@@ -288,7 +288,7 @@ int main(int argc, char *argv[])
     if (!rpl.open(filename))
     {
         fprintf(stderr, "Could not open %s: %s\n", argv[1], rpl.error());
-        return 1;
+        return EXIT_FAILURE;
     }
 
     if (filter)
@@ -307,5 +307,5 @@ int main(int argc, char *argv[])
         REPLAYER_DIE(rpl, "pcap_loop");
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }
