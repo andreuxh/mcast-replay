@@ -9,10 +9,14 @@
 #include <netinet/udp.h>
 
 #include <errno.h>
+#include <fenv.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 
+#include <limits>
 #include <string>
 #include <stdexcept>
 
@@ -83,6 +87,17 @@ public:
         else return pcap_geterr(pcap_);
     }
 
+    void replay_min_time_interval(double min_time_interval)
+    {
+        time_interval_from_double(min_time_interval_, min_time_interval);
+        check_time_intervals();
+    }
+    void replay_max_time_interval(double max_time_interval)
+    {
+        time_interval_from_double(max_time_interval_, max_time_interval);
+        check_time_intervals();
+    }
+
     void dry_run(bool value)            { dry_run_ = value; }
     void stop_on_error(bool value)      { stop_on_error_ = value; }
 
@@ -108,7 +123,17 @@ private:
     bool print_datagram(const pcap_pkthdr *pkt_header,
                         const iphdr *iph, const udphdr *udph);
 
+    static void time_interval_from_double(timeval& tv, double t);
     static void clock_normalize(timespec *ts);
+
+    void check_time_intervals()
+    {
+        if (timercmp(&min_time_interval_, &max_time_interval_, >))
+        {
+            throw std::domain_error("Minimum interval cannot exceed "
+                                    "maximum interval");
+        }
+    }
 
     static void error(const char *msg, size_t got, size_t expected)
     {
@@ -117,8 +142,10 @@ private:
 
     pcap_t *pcap_ = nullptr;
     const char *filename_ = nullptr;
-    timeval pcap_timestamp_ = {-1, -1};
-    timespec replay_timestamp_ = {-1, -1};
+    timeval pcap_timestamp_    = {                                -1,     -1};
+    timeval min_time_interval_ = {                                 0,      0};
+    timeval max_time_interval_ = {std::numeric_limits<time_t>::max(), 999999};
+    timespec replay_timestamp_ = {                                -1,     -1};
     size_t pkt_count = 0;
     int socket_;
     sockaddr_in dest_;
@@ -200,6 +227,30 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
     }
 }
 
+void udp_replayer::time_interval_from_double(timeval& tv, double t)
+{
+    if (t < 0.0)
+    {
+        throw std::domain_error("Time interval cannot be negative");
+    }
+
+    int rounding_mode = fegetround();
+    fesetround(FE_DOWNWARD);
+    time_t sec = lrint(t);
+    double rem = t - sec;
+    long us = lrint(rem * 1000000);
+    fesetround(rounding_mode);
+
+    if (rem >= 1.0)
+    {
+        throw std::domain_error("Time interval cannot be this large: "
+                                + std::to_string(t));
+    }
+
+    tv.tv_sec = sec;
+    tv.tv_usec = us;
+}
+
 inline void udp_replayer::clock_normalize(timespec *ts)
 {
     static const auto ns_per_sec = 1000000000;
@@ -268,10 +319,16 @@ int main(int argc, char *argv[])
 
     int opt;
     const char *filter = nullptr;
-    while ((opt = getopt(argc, argv, "f:nS")) != -1)
+    while ((opt = getopt(argc, argv, "f:m:M:nS")) != -1)
     {
         switch (opt)
         {
+        case 'm':
+            rpl.replay_min_time_interval(atof(optarg));
+            break;
+        case 'M':
+            rpl.replay_max_time_interval(atof(optarg));
+            break;
         case 'f':
             filter = optarg;
             break;
