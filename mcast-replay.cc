@@ -272,17 +272,26 @@ bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
     }
     else
     {
-        replay_timestamp_.tv_sec  += pkt_header->ts.tv_sec
-                                   - pcap_timestamp_.tv_sec;
-        replay_timestamp_.tv_nsec += (pkt_header->ts.tv_usec
-                                    - pcap_timestamp_.tv_usec) * 1000;
+        timeval itv;
+        timersub(&(pkt_header->ts), &pcap_timestamp_, &itv);
+        if (timercmp(&itv, &min_time_interval_, <))
+        {
+            memcpy(&itv, &min_time_interval_, sizeof(timeval));
+        }
+        else if (timercmp(&itv, &max_time_interval_, >))
+        {
+            memcpy(&itv, &max_time_interval_, sizeof(timeval));
+        }
+
+        replay_timestamp_.tv_sec  += itv.tv_sec;
+        replay_timestamp_.tv_nsec += itv.tv_usec * 1000;
         clock_normalize(&replay_timestamp_);
 
         while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
                                &replay_timestamp_, nullptr) == -1
                && errno == EINTR) {}
     }
-    memcpy(&pcap_timestamp_, &pkt_header->ts, sizeof(pcap_timestamp_));
+    memcpy(&pcap_timestamp_, &pkt_header->ts, sizeof(timeval));
 
     dest_.sin_addr.s_addr = iph->daddr;
     dest_.sin_port = udph->dest;
