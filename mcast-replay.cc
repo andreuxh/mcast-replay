@@ -322,7 +322,7 @@ bool udp_replayer::print_datagram(const pcap_pkthdr *pkt_header,
     return -1; \
 } while (0)
 
-int main(int argc, char *argv[])
+int mcast_replay(int argc, char *argv[])
 {
     udp_replayer rpl;
 
@@ -374,4 +374,17 @@ int main(int argc, char *argv[])
     }
 
     return EXIT_SUCCESS;
+}
+
+int main(int argc, char *argv[])
+{
+    try
+    {
+        return mcast_replay(argc, argv);
+    }
+    catch (const std::exception& ex)
+    {
+        fprintf(stderr, "mcast-replay: %s\n", ex.what());
+        return EXIT_FAILURE;
+    }
 }
