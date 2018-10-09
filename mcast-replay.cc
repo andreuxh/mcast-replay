@@ -140,12 +140,19 @@ private:
         fprintf(stderr, "%s [%zu<%zu]\n", msg, got, expected);
     }
 
+    enum ratio
+    {
+        us_per_sec =    1000000,
+        ns_per_sec = 1000000000,
+    };
+
     pcap_t *pcap_ = nullptr;
     const char *filename_ = nullptr;
-    timeval pcap_timestamp_    = {                                -1,     -1};
-    timeval min_time_interval_ = {                                 0,      0};
-    timeval max_time_interval_ = {std::numeric_limits<time_t>::max(), 999999};
-    timespec replay_timestamp_ = {                                -1,     -1};
+    timeval pcap_timestamp_    = { -1, -1 };
+    timeval min_time_interval_ = {  0,  0 };
+    timeval max_time_interval_ = { std::numeric_limits<time_t>::max(),
+                                   us_per_sec - 1                    };
+    timespec replay_timestamp_ = { -1, -1 };
     size_t pkt_count = 0;
     int socket_;
     sockaddr_in dest_;
@@ -238,7 +245,7 @@ void udp_replayer::time_interval_from_double(timeval& tv, double t)
     fesetround(FE_DOWNWARD);
     time_t sec = lrint(t);
     double rem = t - sec;
-    long us = lrint(rem * 1000000);
+    long us = lrint(rem * us_per_sec);
     fesetround(rounding_mode);
 
     if (rem >= 1.0)
@@ -253,7 +260,6 @@ void udp_replayer::time_interval_from_double(timeval& tv, double t)
 
 inline void udp_replayer::clock_normalize(timespec *ts)
 {
-    static const auto ns_per_sec = 1000000000;
     ts->tv_sec  += ts->tv_nsec / ns_per_sec;
     ts->tv_nsec %= ns_per_sec;
     if (ts->tv_nsec < 0)
