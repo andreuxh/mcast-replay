@@ -20,6 +20,7 @@
 #include <string>
 #include <stdexcept>
 
+#include <assert.h>
 
 struct vlan_tag
 {
@@ -241,19 +242,30 @@ void udp_replayer::time_interval_from_double(timeval& tv, double t)
         throw std::domain_error("Time interval cannot be negative");
     }
 
-    int rounding_mode = fegetround();
-    fesetround(FE_DOWNWARD);
-    time_t sec = lrint(t);
-    double rem = t - sec;
-    long us = lrint(rem * us_per_sec);
-    fesetround(rounding_mode);
+    errno = 0;
+    feclearexcept(FE_ALL_EXCEPT);
 
-    if (rem >= 1.0)
+    double ti, tf = modf(t, &ti);
+    long us = lrint(tf * us_per_sec);
+    time_t sec = lrint(ti);
+
+    if (fetestexcept(FE_INVALID))
     {
         throw std::domain_error("Time interval cannot be this large: "
                                 + std::to_string(t));
     }
+    else if (fetestexcept(FE_DIVBYZERO|FE_OVERFLOW|FE_UNDERFLOW) || errno)
+    {
+        throw std::runtime_error("Unexpected math error converting "
+                                 + std::to_string(t));
+    }
 
+    if (us >= us_per_sec)
+    {
+        assert(us == us_per_sec);
+        ++sec;
+        us = 0;
+    }
     tv.tv_sec = sec;
     tv.tv_usec = us;
 }
