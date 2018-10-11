@@ -242,22 +242,20 @@ void udp_replayer::time_interval_from_double(timeval& tv, double t)
         throw std::domain_error("Time interval cannot be negative");
     }
 
-    errno = 0;
     feclearexcept(FE_ALL_EXCEPT);
+    #ifndef NDEBUG
+    errno = 0;
+    #endif
 
-    double ti, tf = modf(t, &ti);
-    long us = lrint(tf * us_per_sec);
-    time_t sec = lrint(ti);
+    double ti, tf = modf(t, &ti);     // modf: always defined, no errors occur.
+    long us = lrint(tf * us_per_sec); // lrint: can raise FE_INVALID,
+    time_t sec = lrint(ti);           //        do not set errno
 
+    assert(!errno && !fetestexcept(FE_DIVBYZERO|FE_OVERFLOW|FE_UNDERFLOW));
     if (fetestexcept(FE_INVALID))
     {
         throw std::domain_error("Time interval cannot be this large: "
                                 + std::to_string(t));
-    }
-    else if (fetestexcept(FE_DIVBYZERO|FE_OVERFLOW|FE_UNDERFLOW) || errno)
-    {
-        throw std::runtime_error("Unexpected math error converting "
-                                 + std::to_string(t));
     }
 
     if (us >= us_per_sec)
