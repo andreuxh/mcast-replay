@@ -237,7 +237,7 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
 
 void udp_replayer::time_interval_from_double(timeval& tv, double t)
 {
-    if (t < 0.0)
+    if (signbit(t))
     {
         throw std::domain_error("Time interval cannot be negative");
     }
