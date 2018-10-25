@@ -121,6 +121,12 @@ public:
         check_time_intervals();
     }
 
+    void multicast_filter(bool allow_multicast, bool allow_unicast)
+    {
+        mcast_filter_ = !allow_multicast << 0
+                      | !allow_unicast   << 1;
+    }
+
     void dry_run(bool value)            { dry_run_ = value; }
     void stop_on_error(bool value)      { stop_on_error_ = value; }
 
@@ -163,10 +169,16 @@ private:
         fprintf(stderr, "%s [%zu<%zu]\n", msg, got, expected);
     }
 
-    enum ratio
+    enum time_unit_ratio
     {
         us_per_sec =    1000000,
         ns_per_sec = 1000000000,
+    };
+
+    enum mcast_mask
+    {
+        drop_multicast = 1 << 0,
+        drop_unicast   = 1 << 1,
     };
 
     pcap_t *pcap_ = nullptr;
@@ -177,6 +189,7 @@ private:
                                    us_per_sec - 1                    };
     timespec replay_timestamp_ = { -1, -1 };
     size_t pkt_count = 0;
+    unsigned mcast_filter_ = drop_unicast;
     int socket_;
     sockaddr_in dest_;
     bool dry_run_ = false;
@@ -230,8 +243,9 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
         return false;
     }
 
+    if ((1 << !IN_MULTICAST(ntohl(iph->daddr))) & mcast_filter_) return true;
+
     if (iph->protocol != IPPROTO_UDP) return true;
-    if (!IN_MULTICAST(ntohl(iph->daddr))) return true;
 
     auto *udph = reinterpret_cast<const udphdr*>(p);
     if ((p += sizeof(udphdr)) > endp)
@@ -366,24 +380,32 @@ int mcast_replay(int argc, char *argv[])
 
     int opt;
     const char *filter = nullptr;
-    while ((opt = getopt(argc, argv, "f:m:M:nS")) != -1)
+
+    while ((opt = getopt(argc, argv, "f:m:M:nSu::")) != -1)
     {
         switch (opt)
         {
+        case 'f':
+            filter = optarg;
+            break;
         case 'm':
             rpl.replay_min_time_interval(atof(optarg));
             break;
         case 'M':
             rpl.replay_max_time_interval(atof(optarg));
             break;
-        case 'f':
-            filter = optarg;
-            break;
         case 'n':
             rpl.dry_run(true);
             break;
         case 'S':
             rpl.stop_on_error(true);
+            break;
+        case 'u':
+            {
+                bool allow_unicast = true;
+                bool allow_multicast = (optarg && *optarg == 'm');
+                rpl.multicast_filter(allow_multicast, allow_unicast);
+            }
             break;
         }
     }
