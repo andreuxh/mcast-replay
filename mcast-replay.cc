@@ -381,24 +381,51 @@ int mcast_replay(int argc, char *argv[])
     int opt;
     const char *filter = nullptr;
 
-    while ((opt = getopt(argc, argv, "f:m:M:nSu::")) != -1)
+    while ((opt = getopt(argc, argv, "f:Fm:M:nNsSu::U")) != -1)
     {
         switch (opt)
         {
         case 'f':
             filter = optarg;
             break;
+        case 'F':
+            filter = nullptr;
+            break;
         case 'm':
             rpl.replay_min_time_interval(atof(optarg));
             break;
         case 'M':
-            rpl.replay_max_time_interval(atof(optarg));
+            {
+                double tM = atof(optarg);
+                try
+                {
+                    rpl.replay_max_time_interval(tM);
+                }
+                catch (const std::domain_error&)
+                {
+                    if (tM > 0) // too large
+                    {
+                        tM = std::numeric_limits<time_t>::max();
+                        rpl.replay_max_time_interval(tM);
+                    }
+                    else        // invalid
+                    {
+                        throw;
+                    }
+                }
+            }
             break;
         case 'n':
             rpl.dry_run(true);
             break;
-        case 'S':
+        case 'N':
+            rpl.dry_run(false);
+            break;
+        case 's':
             rpl.stop_on_error(true);
+            break;
+        case 'S':
+            rpl.stop_on_error(false);
             break;
         case 'u':
             {
@@ -406,6 +433,9 @@ int mcast_replay(int argc, char *argv[])
                 bool allow_multicast = (optarg && *optarg == 'm');
                 rpl.multicast_filter(allow_multicast, allow_unicast);
             }
+            break;
+        case 'U':
+            rpl.multicast_filter(true, false);
             break;
         }
     }
