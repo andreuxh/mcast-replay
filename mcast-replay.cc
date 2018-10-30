@@ -181,12 +181,16 @@ private:
         drop_unicast   = 1 << 1,
     };
 
+    static constexpr timeval time_interval_max()
+    {
+        return { std::numeric_limits<time_t>::max(), us_per_sec - 1 };
+    };
+
     pcap_t *pcap_ = nullptr;
     const char *filename_ = nullptr;
     timeval pcap_timestamp_    = { -1, -1 };
     timeval min_time_interval_ = {  0,  0 };
-    timeval max_time_interval_ = { std::numeric_limits<time_t>::max(),
-                                   us_per_sec - 1                    };
+    timeval max_time_interval_ = time_interval_max();
     timespec replay_timestamp_ = { -1, -1 };
     size_t pkt_count = 0;
     unsigned mcast_filter_ = drop_unicast;
@@ -276,6 +280,12 @@ void udp_replayer::time_interval_from_double(timeval& tv, double t)
     if (signbit(t))
     {
         throw std::domain_error("Time interval cannot be negative");
+    }
+
+    if (t == std::numeric_limits<double>::infinity())
+    {
+        tv = time_interval_max();
+        return;
     }
 
     feclearexcept(FE_ALL_EXCEPT);
@@ -405,7 +415,7 @@ int mcast_replay(int argc, char *argv[])
                 {
                     if (tM > 0) // too large
                     {
-                        tM = std::numeric_limits<time_t>::max();
+                        tM = std::numeric_limits<double>::infinity();
                         rpl.replay_max_time_interval(tM);
                     }
                     else        // invalid
