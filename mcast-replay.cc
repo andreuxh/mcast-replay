@@ -164,9 +164,10 @@ private:
         }
     }
 
-    static void error(const char *msg, size_t got, size_t expected)
+    static bool error(const char *msg, size_t got, size_t expected)
     {
         fprintf(stderr, "%s [%zu<%zu]\n", msg, got, expected);
+        return false;
     }
 
     enum time_unit_ratio
@@ -208,8 +209,8 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
 
     if (pkt_header->caplen < pkt_header->len)
     {
-        error("Short capture length", pkt_header->caplen, pkt_header->len);
-        return false;
+        return error("Short capture length",
+                     pkt_header->caplen, pkt_header->len);
     }
 
     auto *p = pkt_data;
@@ -217,8 +218,8 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
     auto *eth = reinterpret_cast<const ether_header*>(p);
     if ((p += sizeof(ether_header)) > endp)
     {
-        error("Truncated Ethernet header", pkt_header->len, p - pkt_data);
-        return false;
+        return error("Truncated Ethernet header",
+                     pkt_header->len, p - pkt_data);
     }
 
     auto ether_type = eth->ether_type;
@@ -227,8 +228,7 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
         auto *tag = reinterpret_cast<const vlan_tag*>(p);
         if ((p += sizeof(vlan_tag)) > endp)
         {
-            error("Truncated VLAN tag", pkt_header->len, p - pkt_data);
-            return false;
+            return error("Truncated VLAN tag", pkt_header->len, p - pkt_data);
         }
         ether_type = tag->ether_type;
     }
@@ -243,8 +243,7 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
     }
     if ((p += iph_len) > endp)
     {
-        error("Truncated IP header", pkt_header->len, p - pkt_data);
-        return false;
+        return error("Truncated IP header", pkt_header->len, p - pkt_data);
     }
 
     if ((1 << !IN_MULTICAST(ntohl(iph->daddr))) & mcast_filter_) return true;
@@ -254,15 +253,13 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
     auto *udph = reinterpret_cast<const udphdr*>(p);
     if ((p += sizeof(udphdr)) > endp)
     {
-        error("Truncated UDP header", pkt_header->len, p - pkt_data);
-        return false;
+        return error("Truncated UDP header", pkt_header->len, p - pkt_data);
     }
 
     auto len = ntohs(udph->len) - sizeof(udphdr);
-    if (p + len > endp)
+    if ((p += len) > endp)
     {
-        error("Truncated UDP payload", pkt_header->len, p + len - pkt_data);
-        return false;
+        return error("Truncated UDP payload", pkt_header->len, p - pkt_data);
     }
 
     if (!dry_run_)
