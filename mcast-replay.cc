@@ -215,11 +215,16 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
 
     auto *p = pkt_data;
     auto *endp = p + pkt_header->len;
+    auto error_at = [this, pkt_header, pkt_data] // +this: GCC 4.7 bug
+                    (const u_char *p, const char *msg)
+                    {
+                        return error(msg, pkt_header->len, p - pkt_data);
+                    };
+
     auto *eth = reinterpret_cast<const ether_header*>(p);
     if ((p += sizeof(ether_header)) > endp)
     {
-        return error("Truncated Ethernet header",
-                     pkt_header->len, p - pkt_data);
+        return error_at(p, "Truncated Ethernet header");
     }
 
     auto ether_type = eth->ether_type;
@@ -228,7 +233,7 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
         auto *tag = reinterpret_cast<const vlan_tag*>(p);
         if ((p += sizeof(vlan_tag)) > endp)
         {
-            return error("Truncated VLAN tag", pkt_header->len, p - pkt_data);
+            return error_at(p, "Truncated VLAN tag");
         }
         ether_type = tag->ether_type;
     }
@@ -243,7 +248,7 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
     }
     if ((p += iph_len) > endp)
     {
-        return error("Truncated IP header", pkt_header->len, p - pkt_data);
+        return error_at(p, "Truncated IP header");
     }
 
     if ((1 << !IN_MULTICAST(ntohl(iph->daddr))) & mcast_filter_) return true;
@@ -253,13 +258,13 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
     auto *udph = reinterpret_cast<const udphdr*>(p);
     if ((p += sizeof(udphdr)) > endp)
     {
-        return error("Truncated UDP header", pkt_header->len, p - pkt_data);
+        return error_at(p, "Truncated UDP header");
     }
 
     auto len = ntohs(udph->len) - sizeof(udphdr);
     if ((p += len) > endp)
     {
-        return error("Truncated UDP payload", pkt_header->len, p - pkt_data);
+        return error_at(p, "Truncated UDP payload");
     }
 
     if (!dry_run_)
