@@ -66,9 +66,7 @@ public:
 
         dest_.sin_family = AF_INET;
         if (filename_)
-        {
             open();
-        }
     }
 
     ~udp_replayer()
@@ -105,9 +103,12 @@ public:
     bool fail() const { return filename_ && !pcap_; }
     const char *error() const
     {
-        if (!filename_) return nullptr;
-        else if (!pcap_) return errbuf_;
-        else return pcap_geterr(pcap_);
+        if (!filename_)
+            return nullptr;
+        else if (!pcap_)
+            return errbuf_;
+        else
+            return pcap_geterr(pcap_);
     }
 
     void replay_min_time_interval(double min_time_interval)
@@ -142,9 +143,7 @@ private:
     {
         auto& self = *reinterpret_cast<udp_replayer*>(rpl);
         if (!self.handle(pkt_header, pkt_data) && self.stop_on_error_)
-        {
             pcap_breakloop(self.pcap_);
-        }
     }
 
     bool replay_datagram(const pcap_pkthdr *pkt_header,
@@ -223,18 +222,14 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
 
     auto *eth = reinterpret_cast<const ether_header*>(p);
     if ((p += sizeof(ether_header)) > endp)
-    {
         return error_at(p, "Truncated Ethernet header");
-    }
 
     auto ether_type = eth->ether_type;
     while (ether_type == htons(ETHERTYPE_VLAN))
     {
         auto *tag = reinterpret_cast<const vlan_tag*>(p);
         if ((p += sizeof(vlan_tag)) > endp)
-        {
             return error_at(p, "Truncated VLAN tag");
-        }
         ether_type = tag->ether_type;
     }
     if (ether_type != htons(ETHERTYPE_IP)) return true;
@@ -247,9 +242,7 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
         return false;
     }
     if ((p += iph_len) > endp)
-    {
         return error_at(p, "Truncated IP header");
-    }
 
     if ((1 << !IN_MULTICAST(ntohl(iph->daddr))) & mcast_filter_) return true;
 
@@ -257,32 +250,22 @@ bool udp_replayer::handle(const pcap_pkthdr *pkt_header, const u_char *pkt_data)
 
     auto *udph = reinterpret_cast<const udphdr*>(p);
     if ((p += sizeof(udphdr)) > endp)
-    {
         return error_at(p, "Truncated UDP header");
-    }
 
     auto len = ntohs(udph->len) - sizeof(udphdr);
     if ((p += len) > endp)
-    {
         return error_at(p, "Truncated UDP payload");
-    }
 
     if (!dry_run_)
-    {
         return replay_datagram(pkt_header, iph, udph);
-    }
     else
-    {
         return print_datagram(pkt_header, iph, udph);
-    }
 }
 
 void udp_replayer::time_interval_from_double(timeval& tv, double t)
 {
     if (signbit(t))
-    {
         throw std::domain_error("Time interval cannot be negative");
-    }
 
     if (t == std::numeric_limits<double>::infinity())
     {
@@ -339,13 +322,9 @@ bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
         timeval itv;
         timersub(&(pkt_header->ts), &pcap_timestamp_, &itv);
         if (timercmp(&itv, &min_time_interval_, <))
-        {
             memcpy(&itv, &min_time_interval_, sizeof(timeval));
-        }
         else if (timercmp(&itv, &max_time_interval_, >))
-        {
             memcpy(&itv, &max_time_interval_, sizeof(timeval));
-        }
 
         replay_timestamp_.tv_sec  += itv.tv_sec;
         replay_timestamp_.tv_nsec += itv.tv_usec * 1000;
@@ -471,9 +450,7 @@ int mcast_replay(int argc, char *argv[])
     }
 
     if (rpl.loop() < 0)
-    {
         REPLAYER_DIE(rpl, "pcap_loop");
-    }
 
     return EXIT_SUCCESS;
 }
