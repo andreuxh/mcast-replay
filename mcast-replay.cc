@@ -121,6 +121,10 @@ public:
         time_interval_from_double(max_time_interval_, max_time_interval);
         check_time_intervals();
     }
+    void apply_replay_time_scaling(double time_scaling)
+    {
+        time_scaling_ *= time_scaling;
+    }
 
     void multicast_filter(bool allow_multicast, bool allow_unicast)
     {
@@ -153,6 +157,9 @@ private:
 
     static void time_interval_from_double(timeval& tv, double t);
     static void clock_normalize(timespec *ts);
+
+    static timeval to_timeval(double t);
+    static double to_double(const timeval& tv);
 
     void check_time_intervals()
     {
@@ -191,6 +198,7 @@ private:
     timeval pcap_timestamp_    = { -1, -1 };
     timeval min_time_interval_ = {  0,  0 };
     timeval max_time_interval_ = time_interval_max();
+    double time_scaling_ = 1.0;
     timespec replay_timestamp_ = { -1, -1 };
     size_t pkt_count = 0;
     unsigned mcast_filter_ = drop_unicast;
@@ -273,6 +281,13 @@ void udp_replayer::time_interval_from_double(timeval& tv, double t)
         return;
     }
 
+    tv = to_timeval(t);
+}
+
+inline timeval udp_replayer::to_timeval(double t)
+{
+    assert(!signbit(t));
+
     feclearexcept(FE_ALL_EXCEPT);
     #ifndef NDEBUG
     errno = 0;
@@ -295,8 +310,13 @@ void udp_replayer::time_interval_from_double(timeval& tv, double t)
         ++sec;
         us = 0;
     }
-    tv.tv_sec = sec;
-    tv.tv_usec = us;
+
+    return timeval{sec, us};
+}
+
+inline double udp_replayer::to_double(const timeval& tv)
+{
+    return tv.tv_sec + tv.tv_usec / (double)us_per_sec;
 }
 
 inline void udp_replayer::clock_normalize(timespec *ts)
@@ -321,6 +341,8 @@ bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
     {
         timeval itv;
         timersub(&(pkt_header->ts), &pcap_timestamp_, &itv);
+        if (time_scaling_ != 1.0)
+            itv = to_timeval(time_scaling_ * to_double(itv));
         if (timercmp(&itv, &min_time_interval_, <))
             memcpy(&itv, &min_time_interval_, sizeof(timeval));
         else if (timercmp(&itv, &max_time_interval_, >))
@@ -372,7 +394,7 @@ int mcast_replay(int argc, char *argv[])
     int opt;
     const char *filter = nullptr;
 
-    while ((opt = getopt(argc, argv, "f:Fm:M:nNsSu::U")) != -1)
+    while ((opt = getopt(argc, argv, "f:Fm:M:nNsSu::Ux:/:")) != -1)
     {
         switch (opt)
         {
@@ -427,6 +449,12 @@ int mcast_replay(int argc, char *argv[])
             break;
         case 'U':
             rpl.multicast_filter(true, false);
+            break;
+        case 'x':
+            rpl.apply_replay_time_scaling(1.0 / atof(optarg));
+            break;
+        case '/':
+            rpl.apply_replay_time_scaling(atof(optarg));
             break;
         }
     }
