@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018 Hugues Andreux
+  Copyright (c) 2018,2019 Hugues Andreux
   
   Permission is hereby granted, free of charge, to any person obtaining a
   copy of this software and associated documentation files (the "Software"),
@@ -462,7 +462,7 @@ int mcast_replay(int argc, char *argv[])
     const char *filename = (optind < argc) ? argv[optind] : "-";
     if (!rpl.open(filename))
     {
-        fprintf(stderr, "Could not open %s: %s\n", argv[1], rpl.error());
+        fprintf(stderr, "Could not open %s: %s\n", filename, rpl.error());
         return EXIT_FAILURE;
     }
 
