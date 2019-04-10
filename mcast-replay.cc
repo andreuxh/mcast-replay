@@ -361,7 +361,7 @@ bool udp_replayer::replay_datagram(const pcap_pkthdr *pkt_header,
     dest_.sin_addr.s_addr = iph->daddr;
     dest_.sin_port = udph->dest;
     auto buf = reinterpret_cast<const char*>(udph) + sizeof(udphdr);
-    auto len = udph->len - sizeof(udphdr);
+    auto len = ntohs(udph->len) - sizeof(udphdr);
     return -1 != sendto(socket_, buf, len, 0,
                         reinterpret_cast<sockaddr*>(&dest_), sizeof(dest_));
 }
